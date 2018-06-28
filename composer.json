@@ -1,0 +1,36 @@
+{
+  "name": "simplephp/swoole-consumer",
+  "keywords": [
+    "swoole",
+    "consumer",
+    "scheduler",
+    "多进程消费"
+  ],
+  "description": "swoole-consumer一个基于Swoole的多进程消费组件,内置容器、基础DB等常用组件",
+  "homepage": "https://github.com/simplephp/swoole-consumer",
+  "license": "MIT",
+  "require": {
+    "php": ">=5.6",
+    "ext-swoole": ">=1.9.0",
+    "pda/pheanstalk": "^3.1"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^5.7"
+  },
+  "authors": [
+    {
+      "name": "kevin",
+      "email": "askyiwang@gmail.com",
+      "homepage": "https://github.com/simplephp",
+      "role": "Developer"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "simplephp\\consumer\\": "src"
+    }
+  },
+  "bin": [
+    "swoole-consumer"
+  ]
+}
