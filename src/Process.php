@@ -31,12 +31,10 @@ class Process
 
     public function __construct()
     {
-        try {
-            $this->setProcessName(sprintf('swoole-consumer:%s', 'master'));
-            $this->mpid = posix_getpid();
-        } catch (\Exception $e) {
-            die('ALL ERROR: ' . $e->getMessage());
-        }
+
+        $this->setProcessName(sprintf('swoole-consumer:%s', 'master'));
+        $this->mpid = posix_getpid();
+
     }
 
     /**
@@ -71,11 +69,11 @@ class Process
                 $i = 1;
                 $this->setProcessName(sprintf($this->work_name, $index));
                 do {
+                    $this->checkMasterStatus($worker);
                     echo '正在处理任务:'.$i.PHP_EOL;
                     $condition = true;
                     //$condition = ((self::STATUS_RUNNING == $this->status) && (time() < ($begin_time + $this->excute_time)) ? true : false);
                     $i++;
-                    sleep(1);
                 } while ($condition);
             } catch (\Throwable $e) {
                 echo  '1';
@@ -95,26 +93,13 @@ class Process
      * 检查 master 是否存活
      * @param $worker
      */
-    public function checkMpid(&$worker)
+    public function checkMasterStatus(&$worker)
     {
         if (!\Swoole\Process::kill($this->mpid, 0)) {
             $worker->exit();
             // 这句提示,实际是看不到的.需要写到日志中
             echo "Master process exited, I [{$worker['pid']}] also quit\n";
         }
-    }
-
-    public function rebootProcess($ret)
-    {
-        $pid = $ret['pid'];
-        $index = array_search($pid, $this->works);
-        if ($index !== false) {
-            $index = intval($index);
-            $new_pid = $this->createProcess($index, 'Message', 1);
-            echo "rebootProcess: {$index}={$new_pid} Done\n";
-            return;
-        }
-        throw new \Exception('rebootProcess Error: no pid');
     }
 
     /**
