@@ -9,31 +9,99 @@
 
 namespace simplephp\consumer;
 
+use simplephp\consumer\Consumer;
+
 class Process
 {
-    const CHILD_PROCESS_CAN_RESTART         = 'staticWorker';               //子进程可以重启,进程个数固定
-    const CHILD_PROCESS_CAN_NOT_RESTART     = 'dynamicWorker';              //子进程不可以重启，进程个数根据队列堵塞情况动态分配
-    const STATUS_RUNNING                    = 'runnning';                   //主进程running状态
-    const STATUS_WAIT                       = 'wait';                       //主进程wait状态
-    const STATUS_STOP                       = 'stop';                       //主进程stop状态
-    const APP_NAME                          = 'swoole-jobs';                //app name
-    const STATUS_HSET_KEY_HASH              = 'status';                     //status hash名
+    const CHILD_PROCESS_CAN_RESTART = 'staticWorker';               //子进程可以重启,进程个数固定
+    const CHILD_PROCESS_CAN_NOT_RESTART = 'dynamicWorker';              //子进程不可以重启，进程个数根据队列堵塞情况动态分配
+    const STATUS_RUNNING = 'runnning';                   //主进程running状态
+    const STATUS_WAIT = 'wait';                       //主进程wait状态
+    const STATUS_STOP = 'stop';                       //主进程stop状态
+    const APP_NAME = 'swoole-jobs';                //app name
+    const STATUS_HSET_KEY_HASH = 'status';                     //status hash名
 
-    public $mpid                            = 0;
-    public $works                           = [];
-    public $max_precess                     = 5;
-    public $new_index                       = 0;
-    public $master_name                     = "swoole-consumer-master";
-    public $work_name                       = "swoole-consumer-work:%s";
-    private $version                        = '2.5';
-    private $excute_time                    = 3600;                         //子进程最长执行时间,单位：秒
+    public $mpid = 0;
+    public $works = [];
+    public $max_precess = 5;
+    public $new_index = 0;
+    public $master_name = "swoole-consumer-master";
+    public $work_name = "swoole-consumer-work:%s-%s";
+    private $version = '1.0.00';
+    private $excute_time = 3600;                         //子进程最长执行时间,单位：秒
     private $status;
+    private $master_table = null;
+    private $child_table = null;
 
-    public function __construct()
+    public function __construct(array $config)
     {
-
+        $this->config = $config;
         $this->setProcessName(sprintf('swoole-consumer:%s', 'master'));
         $this->mpid = posix_getpid();
+
+    }
+
+    /**
+     * 初始化 table
+     */
+    public function initTable()
+    {
+
+        $this->initMasterTable();
+        $this->initChildTable();
+
+    }
+
+
+    public function saveMasterInfo()
+    {
+        $this->master_table->set('master', ['pid' => $pid, 'status' => $status, 'child_process' => $child_process]);
+    }
+
+    /**
+     * 保存 master 信息
+     * @param $pid
+     * @param $status
+     * @param $child_process
+     */
+    public function changeMasterInfo($status, $child_process)
+    {
+
+        $this->master_table->set('master', [ 'status' => $status, 'child_process' => $child_process]);
+    }
+
+
+    /**
+     * 初始化 master table
+     */
+    public function initMasterTable()
+    {
+
+        $this->master_table = new \swoole_table(1024);
+        if (!$this->master_table) {
+            throw new \Exception('初始化 master table');
+        }
+        $this->master_table->column('pid', \swoole_table::TYPE_INT, 5);       //1,2,4,8
+        $this->master_table->column('status', \swoole_table::TYPE_INT, 2);
+        $this->master_table->column('child_process', \swoole_table::TYPE_INT, 5);
+        $this->master_table->create();
+
+    }
+
+    /**
+     * 初始化子进程 table
+     */
+    public function initChildTable()
+    {
+
+        $this->child_table = new \swoole_table(1024);
+        if (!$this->child_table) {
+            throw new \Exception('初始化子进程 table');
+        }
+        $this->child_table->column('mpid', \swoole_table::TYPE_INT, 5);       //1,2,4,8
+        $this->child_table->column('pid', \swoole_table::TYPE_INT, 2);
+        $this->child_table->column('status', \swoole_table::TYPE_INT, 5);
+        $this->child_table->create();
 
     }
 
@@ -42,9 +110,10 @@ class Process
      */
     public function start()
     {
-        //每个topic开启最少个进程消费队列
-        for ($i = 0; $i < $this->max_precess; ++$i) {
-            $this->createProcess($i, 'Message', 1);
+        foreach ($this->config['job']['topics'] as $k => $v) {
+            for ($i = 0; $i < $v['worker_min_num']; ++$i) {
+                $this->createProcess($v['name'], $v['tube_name'], $i);
+            }
         }
         $this->processingSignal();
     }
@@ -56,34 +125,36 @@ class Process
      * @param $status
      * @return int
      */
-    public function createProcess($index = null, $topic_name, $status)
+    public function createProcess($topic_name, $tube_name, $tag)
     {
-        $process = new \Swoole\Process(function (\Swoole\Process $worker) use ($index) {
-            if (is_null($index)) {
-                $index = $this->new_index;
-                $this->new_index++;
-            }
+        $process = new \Swoole\Process(function (\Swoole\Process $worker) use ($topic_name, $tube_name, $tag) {
             $begin_time = microtime(true);
             try {
                 //设置进程名字
                 $i = 1;
-                $this->setProcessName(sprintf($this->work_name, $index));
+                $this->setProcessName(sprintf($this->work_name, $topic_name, $tag));
+                echo '进程开启' . PHP_EOL;
+                $consumer = new Consumer($tube_name);
                 do {
                     $this->checkMasterStatus($worker);
-                    echo '正在处理任务:'.$i.PHP_EOL;
+                    $consumer->start();
                     $condition = true;
                     //$condition = ((self::STATUS_RUNNING == $this->status) && (time() < ($begin_time + $this->excute_time)) ? true : false);
+                    if ($condition == false) {
+                        unset($consumer);
+                    }
                     $i++;
+                    echo '$i===：' . $i . PHP_EOL;
                 } while ($condition);
             } catch (\Throwable $e) {
-                echo  '1';
+                echo '异常1：' . $e->getMessage() . PHP_EOL;
             } catch (\Exception $e) {
-                echo  '2';
+                echo '异常2：' . $e->getMessage() . PHP_EOL;
             }
         }, false, false);
         $pid = $process->start();
         // 保存当前对象
-        if($pid !== false) {
+        if ($pid !== false) {
             $this->works[$pid] = $process;
         }
         return $pid;
@@ -131,10 +202,10 @@ class Process
             while ($ret = \Swoole\Process::wait(false)) {
                 $pid = $ret['pid'];
                 // 主进程是否存活、存活则可以恢复子进程 todo
-                $new_process_id  = $this->works[$pid]->start();
+                $new_process_id = $this->works[$pid]->start();
                 // 尝试启动新的进程 todo
-                if($new_process_id) {
-                    echo '正在重启进程ID:'.$pid.',新进程ID:'.$new_process_id.PHP_EOL;
+                if ($new_process_id) {
+                    echo '正在重启进程ID:' . $pid . ',新进程ID:' . $new_process_id . PHP_EOL;
                     $this->works[$new_process_id] = $this->works[$pid];
                     unset($this->works[$pid]);
                 }
@@ -154,6 +225,20 @@ class Process
         $data['status'] = self::STATUS_WAIT;
         //$this->saveMasterData($data);
         $this->status = self::STATUS_WAIT;
+    }
+
+    /**
+     * 强制kill worker 进程
+     */
+    private function killWorkers()
+    {
+        if ($this->works) {
+            $this->status = self::STATUS_WAIT;
+            foreach ($this->works as $pid => $worker) {
+                @\Swoole\Process::kill($pid);
+                unset($this->works[$pid]);
+            }
+        }
     }
 
     /**

@@ -62,7 +62,7 @@ class Console
      */
     public function start()
     {
-        $process = new Process();
+        $process = new Process($this->config);
         $process->start();
     }
 
