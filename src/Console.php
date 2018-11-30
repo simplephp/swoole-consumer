@@ -149,7 +149,7 @@ WORKFLOWS
       exit
       Kill all running workers and master PIDs.
 EOF;
-        echo $m;
+        echo $m."\r\n";
     }
 
 }

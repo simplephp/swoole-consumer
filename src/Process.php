@@ -9,7 +9,7 @@
 
 namespace simplephp\consumer;
 
-use simplephp\consumer\Consumer;
+use simplephp\consumer\di\Container;
 
 class Process
 {
@@ -32,77 +32,15 @@ class Process
     private $status;
     private $master_table = null;
     private $child_table = null;
+    public static $container;
+    private $app;
 
     public function __construct(array $config)
     {
         $this->config = $config;
         $this->setProcessName(sprintf('swoole-consumer:%s', 'master'));
         $this->mpid = posix_getpid();
-
-    }
-
-    /**
-     * 初始化 table
-     */
-    public function initTable()
-    {
-
-        $this->initMasterTable();
-        $this->initChildTable();
-
-    }
-
-
-    public function saveMasterInfo()
-    {
-        $this->master_table->set('master', ['pid' => $pid, 'status' => $status, 'child_process' => $child_process]);
-    }
-
-    /**
-     * 保存 master 信息
-     * @param $pid
-     * @param $status
-     * @param $child_process
-     */
-    public function changeMasterInfo($status, $child_process)
-    {
-
-        $this->master_table->set('master', [ 'status' => $status, 'child_process' => $child_process]);
-    }
-
-
-    /**
-     * 初始化 master table
-     */
-    public function initMasterTable()
-    {
-
-        $this->master_table = new \swoole_table(1024);
-        if (!$this->master_table) {
-            throw new \Exception('初始化 master table');
-        }
-        $this->master_table->column('pid', \swoole_table::TYPE_INT, 5);       //1,2,4,8
-        $this->master_table->column('status', \swoole_table::TYPE_INT, 2);
-        $this->master_table->column('child_process', \swoole_table::TYPE_INT, 5);
-        $this->master_table->create();
-
-    }
-
-    /**
-     * 初始化子进程 table
-     */
-    public function initChildTable()
-    {
-
-        $this->child_table = new \swoole_table(1024);
-        if (!$this->child_table) {
-            throw new \Exception('初始化子进程 table');
-        }
-        $this->child_table->column('mpid', \swoole_table::TYPE_INT, 5);       //1,2,4,8
-        $this->child_table->column('pid', \swoole_table::TYPE_INT, 2);
-        $this->child_table->column('status', \swoole_table::TYPE_INT, 5);
-        $this->child_table->create();
-
+        $this->app = Container::getInstance($config['components']);
     }
 
     /**
@@ -110,6 +48,7 @@ class Process
      */
     public function start()
     {
+
         foreach ($this->config['job']['topics'] as $k => $v) {
             for ($i = 0; $i < $v['worker_min_num']; ++$i) {
                 $this->createProcess($v['name'], $v['tube_name'], $i);
@@ -118,6 +57,10 @@ class Process
         $this->processingSignal();
     }
 
+    public function task_run(\Swoole\Process $worker, $a) {
+        var_dump($a);
+        echo "ok...";
+    }
     /**
      * 创建进程
      * @param null $index
@@ -127,6 +70,7 @@ class Process
      */
     public function createProcess($topic_name, $tube_name, $tag)
     {
+
         $process = new \Swoole\Process(function (\Swoole\Process $worker) use ($topic_name, $tube_name, $tag) {
             $begin_time = microtime(true);
             try {

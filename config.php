@@ -20,10 +20,24 @@ return $config = [
     'queueTickTimer' => 1000 * 15,                  //一定时间间隔（毫秒）检查队列长度;默认10秒钟
     'messageTickTimer' => 1000 * 180,               //一定时间间隔（毫秒）发送消息提醒;默认3分钟
     'processName' => ':swooleTopicQueue',           // 设置进程名, 方便管理, 默认值 swooleTopicQueue
+    'components' => [
+        'db' => [
+            'class' => 'simplephp\consumer\db\Connection',
+            'host' => '127.0.0.1',
+            'port' => 3306,
+            'user' => 'root',
+            'password' => '123456',
+            'database' => 'story',
+            'charset' => 'utf8',
+            'timeout' => 2,
+            'max' => 30,
+            'min' => 5
+        ]
+    ],
     //job任务相关
     'job' => [
         'topics' => [
-            ['name' => 'MyJob', 'tube_name' => 'update_weather', 'worker_min_num' => 10, 'worker_max_num' => 30],
+            ['name' => 'MyJob', 'tube_name' => 'update_weather', 'worker_min_num' => 64, 'worker_max_num' => 30],
             //不需要swoole-jobs消费的队列，只往队列里面写数据
             //['name'=> 'TojavaConsumer'],
         ],

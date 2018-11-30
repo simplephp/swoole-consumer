@@ -5,7 +5,7 @@
  */
 namespace simplephp\consumer\db;
 
-class DbPool
+class Connection
 {
     // 连接池数组 .
     protected $connections;
@@ -39,27 +39,11 @@ class DbPool
      * 初始化
      * Pool constructor.
      */
-    private function __construct()
+    public function __construct($config)
     {
         $this->connections = new \SplQueue();
         $this->max = 30;
         $this->min = 5;
-    }
-
-    private function __clone()
-    {
-        // TODO: Implement __clone() method.
-    }
-
-    /**
-     * @return DbPool
-     */
-    public static function getInstance()
-    {
-        if (!(self::$instance instanceof self)) {
-            self::$instance = new DbPool();
-        }
-        return self::$instance;
     }
 
     // worker启动的时候 建立 min 个连接
